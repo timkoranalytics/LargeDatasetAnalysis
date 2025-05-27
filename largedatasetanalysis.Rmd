@@ -1,0 +1,566 @@
+---
+title: "National Research University Higher School of Economics"
+subtitle: "Master's Programme 'Data Analytics and Social Statistics (DASS)'"
+author: "Exploratory Data Analysis (prof. Batagelj)"
+date: "Project 3: Large Dataset Analysis"
+output:
+  pdf_document:
+    latex_engine: xelatex
+header-includes:
+- \usepackage{fancyhdr}
+- \usepackage{enumitem}
+- \usepackage{lipsum}
+- \usepackage{answers}
+- \pagestyle{fancy}
+- \fancyhf{}
+- \setlength\headheight{35pt}
+- \fancypagestyle{plain}{\pagestyle{fancy}}
+- \usepackage{placeins}
+
+pdf_document:
+          includes:
+            in_header: docstyle.sty
+toc: true
+toc_depth: 4
+---
+\vspace{12pt}
+\begin{center}
+\textit{The project was prepared by \textbf{Timofei Korovin}, DASS student}
+\end{center}
+\vspace{12pt}
+\vspace{12pt}
+\vspace{12pt}
+
+\textbf{Short formulation of the task:}
+
+We should choose and analyze the large dataset that contains at least 10000 observations. We should conduct EDA, in particular study our variables and relationships between them. Finally, we need to formulate some suggestions for deeper analysis. 
+
+\vspace*{\fill}
+\begin{center}
+\emph{Creation date:} 20/04/2025
+
+\emph{The last change date:} 27/04/2025
+\end{center}
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::knit_hooks$set(plot = function (x, options) {
+  float_correct <- function(f, y, opts)  {
+    if (is.null(opts$regfloat) || opts$regfloat==FALSE)
+      paste0(f(y, opts), "\n\n\\FloatBarrier\n")
+    else
+      f(y, opts)
+  }
+  if (!is.null(options$out.width) || !is.null(options$out.height) ||
+      !is.null(options$out.extra) || options$fig.align != "default" ||
+      !is.null(options$fig.subcap)) {
+    if (is.null(options$fig.scap))
+      options$fig.scap = NA
+    return(float_correct(knitr:::hook_plot_tex, x, options))
+  }
+  return(float_correct(knitr:::hook_plot_md_base, x, options))
+})
+```
+
+\newpage
+
+\section{Introduction}
+
+In this project, we will conduct an exploratory data analysis on a dataset about depression among students, using different demographic, lifestyle, academic indicators. We will examine the variables as well as check the relationship between the variables. Finally, аfter the exploratory analysis, we will make suggestions for further analysis
+
+\section{Dataset description} 
+
+This dataset compiles a wide range of information aimed at understanding, analyzing, and predicting depression levels among students. It is designed for research in psychology, data science, and education, providing insights into factors that contribute to student mental health challenges and aiding in the design of early intervention strategies. 
+
+P.S. the description is taken from Kaggle. It can be found with the following link: https://www.kaggle.com/datasets/adilshamim8/student-depression-dataset/data
+
+\subsection{Variables description}
+
+"id" - students ids 
+
+"age" - students age, numerical (continuous). 
+
+"gender" - students gender, nominal. 
+
+"profession" - student professional status, nominal. 
+
+"academic_pressure" - a measure indicating the level of pressure the student faces in academic settings (1-5 scale), ordinal. 
+
+"cgpa" - the cumulative grade point average of the student, reflecting overall academic performance, numerical (continuous). 
+
+"study_satisfaction" - an indicator of how satisfied the student is with their studies (1-5 scale), ordinal. 
+
+"sleep_duration" - the average number of hours the student sleeps per day, ordinal.
+
+"dietary_habits" - an assessment of the student’s eating patterns and nutritional habits, ordinal. 
+
+"work_study_hours" - the average number of hours per day the student dedicates to work or study, numerical (continuous). 
+
+"family_history_of_mental_ilness" - Indicates whether there is a family history of mental illness, binary. 
+
+"have_you_ever_had_suicidal_thoughts" - an indicator that reflects whether the student has ever experienced suicidal ideation, binary. 
+
+"depression" - the target variable that indicates whether the student is experiencing depression, binary. 
+
+\section{Data preparation}
+
+```{r, message=FALSE, warning=FALSE}
+
+library(tidyverse)
+library(ggplot2)
+library(corrplot)
+
+```
+
+
+```{r}
+df <- read.csv("student_depression_dataset.csv")
+summary(df)
+
+table(df$Work.Pressure)
+table(df$Job.Satisfaction)
+```
+
+We will drop variables Work.Pressure and Job.Satisfaction from the final dataset, since they contain a lot of missing values. Next, we format the variable names into a basic format and preprocces our data for further analysis 
+
+```{r}
+df <- df %>%
+  select(id, Gender, Age, Profession, Academic.Pressure, CGPA, Study.Satisfaction, 
+         Sleep.Duration, Dietary.Habits, Work.Study.Hours, 
+         Family.History.of.Mental.Illness, 
+         Have.you.ever.had.suicidal.thoughts.., Depression) %>%
+  rename_with(~ .x %>%
+                tolower() %>%
+                str_replace_all("\\.", "_") %>%
+                str_replace_all("__+", "_") %>%     
+                str_replace("_$", "")          
+              )
+
+```
+
+
+```{r}
+df_clean <- df  %>%
+  mutate(
+    sleep_duration = case_when(
+      sleep_duration == "'Less than 5 hours'" ~ "low",
+      sleep_duration == "'5-6 hours'" ~ "moderate",
+      sleep_duration == "'7-8 hours'" ~ "normal",
+      sleep_duration == "'More than 8 hours'" ~ "above_normal",
+      TRUE ~ NA_character_ 
+    ),
+    family_history_of_mental_illness = 
+      if_else(family_history_of_mental_illness == "Yes", 1, 0),
+    have_you_ever_had_suicidal_thoughts = 
+      if_else(have_you_ever_had_suicidal_thoughts == "Yes", 1, 0)
+  ) 
+    
+df_clean <- df_clean %>%
+  filter(profession == "Student") %>%
+  mutate(cgpa = ifelse(cgpa == 0, NA, cgpa)) %>%
+  mutate(work_study_hours = ifelse(work_study_hours == 0, NA, work_study_hours)) %>%
+  mutate(academic_pressure = ifelse(academic_pressure == 0, NA, academic_pressure)) %>%
+  mutate(study_satisfaction = ifelse(study_satisfaction == 0, NA, study_satisfaction)) %>%
+  mutate(dietary_habits = ifelse(dietary_habits == "Others", NA, dietary_habits))
+  
+
+```
+
+\subsection{Dealing with NA values}
+
+After data preprocessing we can detect NA values for our variables 
+
+```{r}
+colSums(is.na(df_clean))
+```
+For academic_pressure, dietary_habits, cgpa, study_satisfaction and sleep_duration variables we will simply delete NA values, since it is a very small fraction of the values from the total number of observations for these variables. In case of work_study_hours, from our point of view, the best choice is to replace the missing values with the median values. In this case, we will not create outliers and will not lose a significant proportion of observations. 
+
+```{r}
+df_clean <- df_clean %>% 
+  filter(
+    !is.na(academic_pressure),
+    !is.na(dietary_habits),
+    !is.na(cgpa),
+    !is.na(study_satisfaction),
+    !is.na(sleep_duration)
+  ) %>%
+  mutate(
+    work_study_hours = ifelse(
+      is.na(work_study_hours),
+      median(work_study_hours, na.rm = TRUE),
+      work_study_hours
+    )
+  )
+
+colSums(is.na(df_clean))
+```
+
+Now our dataset is ready for analysis. 
+
+\section{Central tendency measures}
+
+For our continuous variables lets calculate some central tendency measures (mean, median).
+
+```{r}
+num_vars <- c("age", "cgpa", "academic_pressure")
+df_clean %>% 
+  select(all_of(num_vars)) %>% 
+  summary() 
+```
+For our nominal and ordinal variables we will use visualizations to demonstrate distributions. 
+
+\section{Variables distribuitons}
+
+In this section we will examine the distributions of our variables. In addition, we will plot our ordinal and nominal variables against target variables (depression). 
+
+\subsection{Age distribution}
+
+```{r, echo=FALSE}
+
+ggplot(df_clean, aes(x = age)) +
+  geom_histogram(binwidth = 1, fill = "skyblue", color = "black", alpha = 0.7) +
+  labs(title = "Age distribution",
+       x = "Age",
+       y = "N. of Students") +
+  theme_minimal()
+
+
+```
+The age distribution in the sample is heavily skewed towards younger respondents: the vast majority of participants are between 18 and 35 years of age. Which is logical, since dataset mainly describes school/college/university students. In addition, in this range the values are distributed relatively uniformly. However, to better visualize outliers in our data we will build boxplot. 
+
+```{r, echo=FALSE}
+
+ggplot(df_clean, aes(y = age)) +
+  geom_boxplot(fill = "lightblue", color = "black") +
+  labs(title = "Age distribution",
+       y = "Age") +
+  theme_minimal()
+```
+As it can be seen on the graph, the median age is 25. Indeed values slightly higher than 40 are clear outliers. We suggest that these values can be simply deleted from our dataset, since we are more interested in studying the tendency of depression in young respondents. 
+
+However, let's also use the table() function to check the distribution of unique values in the age variable.
+
+```{r}
+table(df_clean$age)
+```
+Our suggestion is that all values above 34 should be excluded from the data set, since they are clear outliers.
+
+```{r}
+df_clean <- df_clean %>%
+  filter(age <= 34)
+
+ggplot(df_clean, aes(y = age)) +
+  geom_boxplot(fill = "lightblue", color = "black") +
+  labs(title = "Age distribution",
+       y = "Age") +
+  theme_minimal()
+```
+It is evidenced from the box plot above that we have no outliers for "age" variable anymore. 
+
+\subsection{CGPA distribution}
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+
+ggplot(df_clean, aes(x = cgpa)) +
+  geom_histogram(binwidth = 0.1, fill = "darkblue", color = "black", alpha = 0.7) +
+  labs(title = "CGPA distribution",
+       x = "CGPA",
+       y = "N. of Students") +
+  theme_minimal()
+
+```
+Overall, CGPA is fairly uniformly distributed across the whole sample, there is no clear bias toward high or low scores. Futhermore, no extreme values below 5 or above 10 have been observed. However, to be sure lets also build box plot again. 
+
+```{r, echo=FALSE}
+ggplot(df_clean, aes(y = cgpa)) +
+  geom_boxplot(fill = "darkblue", color = "black") +
+  labs(title = "CGPA distribution",
+       y = "CGPA") +
+  theme_minimal()
+```
+
+The median CGPA is about 7.8. No outliers have been detected on the graph. IQR is approximately between 6.5 and 9, indicating that the biggest share of students have CGPA in that particular range. 
+
+\subsection{Study Hours distribution}
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+library(ggplot2)
+
+ggplot(df_clean, aes(x = work_study_hours)) +
+  geom_histogram(binwidth = 1, fill = "#CCCC33", color = "black", alpha = 0.7) +
+  labs(title = "Study hours distribution",
+       x = "Study Hours",
+       y = "N. of Students") +
+  theme_minimal()
+
+
+```
+According to the histogram above, the distribution for Study Hours is uneven. In general, there is an increase in the number of students as the number of hours increases up to 10 (clear pick value in our data), after which the number students decreases. Thus, the graph shows that more students tend to spend a significant amount of time studying (more than 5 hours). None extreme values have been observed. 
+
+
+```{r, echo=FALSE}
+ggplot(df_clean, aes(y = work_study_hours)) +
+  geom_boxplot(fill = "#CCCC33", color = "black") +
+  labs(title = "Study hours distribution",
+       y = "Study Hours") +
+  theme_minimal()
+
+```
+
+The median value of Study hours is slightly above 7,5. The IQR is between 5 to 10 hours, which confirms that most students study for more than 5 hours per day.
+
+\subsection{Depression distribution}
+
+```{r, echo=FALSE}
+ggplot(df, aes(x = factor(depression))) +
+  geom_bar(aes(fill = factor(depression)), color = "black") +
+  scale_fill_manual(values = c("0" = "lightgreen", "1" = "firebrick")) +
+  labs(title = "Depression distribution",
+       x = "Depression (0 = No, 1 = Yes)",
+       y = "N. of Students") +
+  theme_minimal()
+```
+The distribution of depression in the dataset is imbalanced. The number of students with depression (the red bar, around 16.000 students) is higher than the number of students without depression (the light green bar, around 11.000 students).
+
+\subsection{Gender distribution}
+
+```{r, echo=FALSE}
+
+ggplot(df_clean, aes(x = factor(gender), fill = factor(gender))) +
+  geom_bar(color = "black") +
+  scale_fill_manual(values = c("Male" = "blue", "Female" = "pink")) +  
+  labs(title = "Distribution of Gender",
+       x = "Gender",
+       y = "N. of Students") +
+  theme_minimal()
+
+
+```
+The gender distribution is imbalanced as well. The number of males is slightly below 15.000, whereas there are about 12.500 females students. 
+\subsection{Gender vs Depression}
+```{r, echo=FALSE}
+ggplot(df_clean, aes(x = factor(gender), fill = factor(depression))) +
+  geom_bar(position = "dodge", color = "black") +
+  scale_fill_manual(values = c("0" = "lightgreen", "1" = "firebrick")) +  
+  labs(title = "Gender vs Depression",
+       x = "Gender",
+       y = "N. of Students",
+       fill = "Depression") +
+  theme_minimal()
+```
+In context of the depression distribution by gender factor, both genders shows higher proportion of students with depression compared to those without it. In addition, males have slightly higher rate of depression compared to females. 
+
+\subsection{Academic Pressure distribution}
+
+```{r, echo=FALSE}
+ggplot(df_clean, aes(x = factor(academic_pressure), fill = factor(academic_pressure))) +
+  geom_bar(color = "black") +
+  scale_fill_brewer(palette = "Set3") + 
+  labs(title = "Academic Pressure distribution",
+       x = "Academic Pressure",
+       y = "N. of Students") +
+  theme_minimal()
+
+```
+The bar chart above demonstrates the distribution of Academic Pressure. It is noticeable that 3 category demonstrate the highest count, with number exceeding 7000 students. It is followed by the 5th category with about 6000 students for this level of pressure. Level 1 and 4 demonstrate almost similar shares, about 5000 students. 2nd level demonstrate the smallest number of students. 
+
+\subsection{Academic Pressure vs Depression}
+
+```{r, echo=FALSE}
+ggplot(df_clean, aes(x = factor(academic_pressure), fill = factor(depression))) +
+  geom_bar(position = "dodge", color = "black") +
+  scale_fill_manual(values = c("0" = "lightgreen", "1" = "firebrick")) + 
+  labs(title = "Academic Pressure vs Depression",
+       x = "Academic Pressure",
+       y = "Count",
+       fill = "Depression") +
+  theme_minimal()
+```
+The bar chart demonstrates the Depression levels for each category of Academic Pressure. Overall, it can be seen that while academic pressure increases, the share of students with depression also increases. However, it is important to note, that this visualization does not prove casual relationship between these two variables. 
+
+\subsection{Study Satisfaction}
+
+```{r, echo=FALSE}
+ggplot(df_clean, aes(x = factor(study_satisfaction), fill = factor(study_satisfaction))) +
+  geom_bar(color = "black") +
+  scale_fill_brewer(palette = "Set3") + 
+  labs(title = "Study Satisfaction distribution",
+       x = "Study Satisfaction",
+       y = "N. of Students") +
+  theme_minimal()
+
+```
+The provided bat chart demonstrates distribution of study satisfaction levels. The 4th level demonstrate the highest share, exceeding 6000 students. It is followed by the satisfaction levels 2 and 3, that have the same count of students (approximately 5800 students). 1st level demonstrate slightly lower number of students, approximately 5400 students. The smallest share of students (approximately 4400 students) belongs to the 5th level. 
+
+\subsection{Study Satisfaction vs Depression} 
+
+```{r, echo=FALSE}
+ggplot(df_clean, aes(x = factor(study_satisfaction), fill = factor(depression))) +
+  geom_bar(position = "dodge", color = "black") +
+  scale_fill_manual(values = c("0" = "lightgreen", "1" = "firebrick")) + 
+  labs(title = "Study Satisfaction vs Depression",
+       x = "Study Satisfaction",
+       y = "Count",
+       fill = "Depression") +
+  theme_minimal()
+```
+The bar chart above demonstrates the shares of depression for each category of Study Satisfaction level. Overall, it can be seen that the share of students with depression decreases with higher satisfaction level. 
+
+\subsection{Dietary Habits distirbution}
+
+```{r, echo=FALSE}
+ggplot(df_clean, aes(x = factor(dietary_habits, levels = c("Unhealthy", "Moderate", "Healthy")), fill = factor(dietary_habits))) +
+  geom_bar(color = "black") +
+  scale_fill_brewer(palette = "Set3") + 
+  labs(title = "Dietary Habits distirbution",
+       x = "Dietary Habits",
+       y = "Count") +
+  theme_minimal()
+
+```
+As it can be seen on the graph, the biggest part of students have unhealthy dietary habits, the number exceeds 10000 students. It is followed by the moderate level of dietary habits, with number of students slightly below 10000. The lowest number of students, around 7500, have healthy dietary habits. 
+
+
+\subsection{Dietary Habits vs Depression}
+
+```{r, echo=FALSE}
+ggplot(df_clean, aes(x = factor(dietary_habits, levels = c("Unhealthy", "Moderate", "Healthy")), fill = factor(depression))) +
+  geom_bar(position = "dodge", color = "black") +
+  scale_fill_manual(values = c("0" = "lightgreen", "1" = "firebrick")) + 
+  labs(title = "Dietary Habits vs Depression",
+       x = "Dietary Habits",
+       y = "Count",
+       fill = "Depression") +
+  theme_minimal()
+```
+Overall, it evidenced from the graph above that the positive depression cases decreases with healthier dietary habits. 
+ 
+\subsection{Suicidal Thougths distribution}
+
+```{r, echo=FALSE}
+
+ggplot(df_clean, aes(x = factor(have_you_ever_had_suicidal_thoughts))) +
+  geom_bar(aes(fill = factor(have_you_ever_had_suicidal_thoughts)), color = "black") +
+  scale_fill_manual(values = c("0" = "lightgreen", "1" = "firebrick")) +
+  labs(title = "Respondents answers on suicidal thoughts question",
+       x = "Have you ever had suicidal thoughts? (O = No, 1 = Yes)",
+       y = "Count") +
+  theme_minimal()
+
+
+
+```
+The bar chart shows the distribution of students who have ever had suicidal thoughts. Most students, about 20000, encountered suicidal thoughts. Half as many students, about 10000, have never had such thoughts. 
+
+\subsection{Suicidal Thougths vs Depression}
+
+```{r, echo=FALSE}
+ggplot(df_clean, aes(x = factor(have_you_ever_had_suicidal_thoughts), fill = factor(depression))) +
+  geom_bar(position = "dodge", color = "black") +
+  scale_fill_manual(values = c("0" = "lightgreen", "1" = "firebrick")) +  
+  labs(title = "Suicidal thoughts vs Depression",
+       x = "Have you ever had suicidal thoughts? (O = No, 1 = Yes)",
+       y = "N. of Students",
+       fill = "Depression") +
+  theme_minimal()
+```
+The bar chart demonstrates depression rates for two groups of students (that have encountered suicidal thoughts and not). Overall, it clearly seen on the graph, that the share of positive depression cases is extremely higher for students who have encountered such thoughts compared to those who have not. 
+
+\subsection{Family history of mental illnessess}
+
+```{r, echo=FALSE}
+ggplot(df_clean, aes(x = factor(family_history_of_mental_illness))) +
+  geom_bar(aes(fill = factor(family_history_of_mental_illness)), color = "black") +
+  scale_fill_manual(values = c("0" = "lightgreen", "1" = "firebrick")) +
+  labs(title = "Respondents answers on family history mental illnesses question",
+       x = "Family history of mental illnesses (O = No, 1 = Yes)",
+       y = "Count") +
+  theme_minimal()
+
+```
+The distribution of students with and without family history of mental illnesses is almost equal, with slightly higher number of students for the 0 category. 
+
+\subsection{Family history of mental illnessess vs Depression}
+
+```{r, echo=FALSE}
+ggplot(df_clean, aes(x = factor(family_history_of_mental_illness), fill = factor(depression))) +
+  geom_bar(position = "dodge", color = "black") +
+  scale_fill_manual(values = c("0" = "lightgreen", "1" = "firebrick")) +  
+  labs(title = "Family History of Mental Illness vs Depression",
+       x = "Family History of Mental Illness (0 = No, 1 = Yes)",
+       y = "Count",
+       fill = "Depression") +
+  theme_minimal()
+```
+The Family History of Mental Illness vs Depression plot shows, that the proportion of positive cases of depression is slightly higher for those students whose family members have experienced mental health problems. 
+
+\section{Correaltion matrix and pairs diagram}
+
+\subsection{Correlation matrix for continous and ordinal variables}
+
+Firstly, we should re-code some of our ordinal variables, in case to include them in our correlation matrix. 
+
+```{r}
+df_clean2 <- df_clean %>%
+  mutate(
+    diet_ordinal = case_when(
+      dietary_habits == "Unhealthy" ~ 1,
+      dietary_habits == "Moderate" ~ 2,
+      dietary_habits == "Healthy" ~ 3
+    ),
+    sleep_ordinal = case_when(
+      sleep_duration == "low" ~ 1, 
+      sleep_duration == "moderate" ~ 2, 
+      sleep_duration == "normal" ~ 3, 
+      sleep_duration == "above_normal" ~ 4
+    )
+  )
+
+```
+
+Now we can create a correlation matrix using Spearman method. The reason behind choosing these method is pretty simple. Firstly, we have ordinal varaibles and it is better to use mentioned method when we want to calculate correlation for such type of variables. Secondly, since none of our continuous variables are distributed normally, using Pearson method (for example separate correlation matrix for continuous variables) would be a violation of the normality assumption of this method. In turn, Spearman method is robust for non-normality. 
+
+```{r}
+df_numeric <- df_clean2 %>% 
+  select(age, cgpa, academic_pressure, work_study_hours, study_satisfaction, diet_ordinal, sleep_ordinal)
+
+cor_matrix <- cor(df_numeric, method = "spearman") 
+
+cor_matrix
+
+corrplot(cor_matrix, method = "number")
+
+
+```
+From the correlation matrix above we can make the following conclusions. The Spearman correlation matrix demonstrate weak relationships between the variables. No strong correlations, positive or negative, can be observed. However, let's consider even minor correlations: 
+
+1) Age demonstrate a very weak positive correlation with dietary habits (0.06), indicating a minor tendency for older individuals to have slightly better diets. It is also negatively correlated (also weakly, -0.08) with academic pressure, suggesting that older students tend to experience less academic pressure. 
+
+2) Cgpa correlates with study satisfaction (-0.05), suggesting that higher academic performance is weakly associated with lower levels of study satisfaction. Also it correlates positively with academic pressure (0.02), suggesting that the higher a student's grade point average, the greater the academic load. 
+
+3) Academic pressure correlates weakly with study satisfaction (-0,12 - however, it is the highest value within matrix). Also it is positively associated with study hours (0,07), suggesting that students who spend more time studying tend to experience slightly higher levels of academic pressure. Additionally, academic pressure is negatively correlated with dietary habits (-0.09), indicating that higher academic pressure may be linked to poorer dietary habits. Finally, it is negatively correlated to sleep hours (-0,04), indicating that higher academic pressure associated with less our slept among students. 
+
+4) Study hours is negatively correlated with study satisfaction (-0.03), suggesting that more time spent on studying associated with lower rate of study satisfaction. Additionally, it is negatively associated with dietary habits, which shows the minimal effect of study time on dietary habits. Finally, study hours is negatively associated with  sleep duration (-0.025), which may indicate a small negative effect of study time on sleep duration. 
+
+5) Study Satisfaction is negatively correlated with dietary habits (-0,2), indicating that those who are more satisfied with their studies tend to have slightly poorer dietary habits. 
+
+Nevertheless, the correlations between the variables are too weak to be considered statistically significant.
+
+\subsection{Pairs diagram for continuous variables}
+
+```{r}
+df_cont <- df_clean %>% 
+  select(age, cgpa, work_study_hours)
+
+pairs(df_cont)
+
+```
+According to pairs diagram, there are no direct and linear relationships between age, CGPA and hours studied.
+
+\section{Suggestions for further analysis}
+
+This dataset was originally created to predict the target variable depression.  Therefore, in a sense, it is logical that we did not find multicollinearity or direct linear relationships. In real life data, especially in social and medical research, predictors often have complex, non-linear and interdependent effects on the target variable (which is usually binary). A suitable method to deeply analyze this dataset would be machine learning models like logistic regression or random forest. 
+
+
+
+
